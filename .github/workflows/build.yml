@@ -31,6 +31,31 @@ jobs:
         run: |
           chmod +x "$THEOS/bin"/* || true
 
+      - name: Debug Theos install
+        run: |
+          echo "--- Debug: Theos environment ---"
+          echo "THEOS=$THEOS"
+          echo "PATH=$PATH"
+          echo "--- ls THEOS root ---"
+          ls -la "$THEOS" || true
+          echo "--- ls THEOS bin ---"
+          ls -la "$THEOS/bin" || true
+          echo "--- which dm.pl ---"
+          which dm.pl || true
+          echo "--- check dm.pl file ---"
+          if [ -f "$THEOS/bin/dm.pl" ]; then
+            echo "dm.pl exists at $THEOS/bin/dm.pl"
+            echo "--- head of dm.pl ---"
+            head -n 5 "$THEOS/bin/dm.pl" || true
+            echo "--- perl --version ---"
+            perl -v || true
+          else
+            echo "dm.pl NOT found in $THEOS/bin"
+          fi
+          echo "--- dpkg-deb location/version ---"
+          which dpkg-deb || true
+          dpkg-deb --version || true
+
       - name: Build with Theos
         run: |
           set -e
