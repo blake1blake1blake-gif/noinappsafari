@@ -32,3 +32,32 @@ jobs:
         with:
           name: packages
           path: packages/*.deb
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          release_name: NoInAppSafari v0.1.${{ github.run_number }}
+          body: "Automated release from workflow run ${{ github.run_number }}"
+          draft: false
+          prerelease: false
+
+      - name: Find built .deb
+        id: find_package
+        run: |
+          set -e
+          pkg=$(ls packages/*.deb | head -n1)
+          echo "package=$pkg" >> $GITHUB_OUTPUT
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ${{ steps.find_package.outputs.package }}
+          asset_name: ${{ steps.find_package.outputs.package }}
+          asset_content_type: application/octet-stream
