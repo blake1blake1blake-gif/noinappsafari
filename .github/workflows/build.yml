@@ -69,7 +69,7 @@ jobs:
           echo "$(brew --prefix)/bin" >> $GITHUB_PATH
           chmod +x "$THEOS/bin"/* || true
 
-      - name: Ensure dm.pl present (download if missing)
+      - name: Ensure dm.pl present (download if missing and copy to brew bin)
         run: |
           set -e
           mkdir -p "$THEOS/bin"
@@ -84,6 +84,9 @@ jobs:
             echo "dm.pl already present"
           fi
           chmod +x "$THEOS/bin/dm.pl"
+          # Copy dm.pl to Homebrew bin so it's guaranteed on PATH
+          cp "$THEOS/bin/dm.pl" "$(brew --prefix)/bin/dm.pl" || true
+          chmod +x "$(brew --prefix)/bin/dm.pl" || true
 
       - name: Debug Theos install
         run: |
@@ -117,7 +120,7 @@ jobs:
           export PATH="$(brew --prefix)/bin:$THEOS/bin:$PATH"
           echo "Using THEOS=$THEOS"
           echo "PATH=$PATH"
-          which dm.pl || { echo "dm.pl not found on PATH"; ls -la "$THEOS/bin"; exit 1; }
+          which dm.pl || { echo "dm.pl not found on PATH"; ls -la "$THEOS/bin"; ls -la "$(brew --prefix)/bin"; exit 1; }
           make package
 
       - name: Upload packages
