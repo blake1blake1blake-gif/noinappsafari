@@ -1,9 +1,11 @@
 name: Build Theos tweak
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   build:
     runs-on: macos-latest
+    env:
+      THEOS: ${{ runner.home }}/theos
 
     steps:
       - name: Checkout
@@ -13,17 +15,25 @@ jobs:
         run: |
           set -e
           brew update || true
-          brew install dpkg || true
-          brew install ldid || true
+          brew install dpkg ldid || true
+          # common build tools that may be required by some projects
+          brew install autoconf automake gnu-sed coreutils || true
 
       - name: Install Theos
         run: |
-          git clone --depth=1 https://github.com/theos/theos.git $HOME/theos
+          git clone --depth=1 https://github.com/theos/theos.git $THEOS
+
+      - name: Add Theos bin to PATH
+        run: |
+          echo "$THEOS/bin" >> $GITHUB_PATH
+
+      - name: Ensure Theos tools are executable
+        run: |
+          chmod +x "$THEOS/bin"/* || true
 
       - name: Build with Theos
         run: |
           set -e
-          export THEOS="$HOME/theos"
           echo "Using THEOS=$THEOS"
           make package
 
@@ -51,6 +61,7 @@ jobs:
           set -e
           pkg=$(ls packages/*.deb | head -n1)
           echo "package=$pkg" >> $GITHUB_OUTPUT
+          echo "package_name=$(basename $pkg)" >> $GITHUB_OUTPUT
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v2
@@ -59,5 +70,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
           asset_path: ${{ steps.find_package.outputs.package }}
-          asset_name: ${{ steps.find_package.outputs.package }}
+          asset_name: ${{ steps.find_package.outputs.package_name }}
           asset_content_type: application/octet-stream
