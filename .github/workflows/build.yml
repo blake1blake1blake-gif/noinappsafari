@@ -1,6 +1,10 @@
 name: Build Theos tweak
 on: [push, pull_request, workflow_dispatch]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: macos-latest
@@ -11,47 +15,81 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install prerequisites
+      - name: Install prerequisites (with retries)
         run: |
           set -e
-          brew update || true
-          brew install dpkg ldid || true
-          # common build tools that may be required by some projects
-          brew install autoconf automake gnu-sed coreutils || true
+          retry() {
+            local n=1
+            local max=3
+            local delay=5
+            while true; do
+              "$@" && break || {
+                if [ "$n" -lt "$max" ]; then
+                  n=$((n+1))
+                  echo "Command failed. Attempt $n/$max:" "$@"
+                  sleep $delay
+                else
+                  echo "The command has failed after $n attempts." >&2
+                  return 1
+                fi
+              }
+            done
+          }
+          retry brew update || true
+          retry brew install dpkg ldid || true
+          retry brew install autoconf automake gnu-sed coreutils || true
 
-      - name: Install Theos
+      - name: Install Theos (full recursive clone with retries)
         run: |
-          git clone --depth=1 https://github.com/theos/theos.git $THEOS
+          set -e
+          retry() {
+            local n=1
+            local max=3
+            local delay=5
+            while true; do
+              "$@" && break || {
+                if [ "$n" -lt "$max" ]; then
+                  n=$((n+1))
+                  echo "Command failed. Attempt $n/$max:" "$@"
+                  sleep $delay
+                else
+                  echo "The command has failed after $n attempts." >&2
+                  return 1
+                fi
+              }
+            done
+          }
+          # Remove any partial clone and retry a full recursive clone
+          rm -rf "$THEOS"
+          retry git clone --recursive https://github.com/theos/theos.git "$THEOS"
 
-      - name: Add Theos bin to PATH
+      - name: Ensure Theos bin on PATH and executable
         run: |
           echo "$THEOS/bin" >> $GITHUB_PATH
-
-      - name: Ensure Theos tools are executable
-        run: |
+          echo "$(brew --prefix)/bin" >> $GITHUB_PATH
           chmod +x "$THEOS/bin"/* || true
 
-      - name: Ensure dm.pl present
+      - name: Ensure dm.pl present (download if missing)
         run: |
           set -e
           mkdir -p "$THEOS/bin"
-          # If dm.pl is missing from theos, pull it from theos master branch
           if [ ! -f "$THEOS/bin/dm.pl" ]; then
             echo "dm.pl not found in $THEOS/bin, downloading from theos repo"
-            curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/dm.pl -o "$THEOS/bin/dm.pl"
+            curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/dm.pl -o "$THEOS/bin/dm.pl" || {
+              echo "Failed to download dm.pl" >&2
+              ls -la "$THEOS/bin" || true
+              exit 1
+            }
           else
             echo "dm.pl already present"
           fi
           chmod +x "$THEOS/bin/dm.pl"
-          # Ensure Theos bin and Homebrew bin are on PATH for following steps
-          echo "$THEOS/bin" >> $GITHUB_PATH
-          echo "$(brew --prefix)/bin" >> $GITHUB_PATH
 
       - name: Debug Theos install
         run: |
           echo "--- Debug: Theos environment ---"
           echo "THEOS=$THEOS"
-          echo "PATH=$PATH"
+          echo "GIT_COMMIT: $(git -C $THEOS rev-parse --short HEAD 2>/dev/null || true)"
           echo "--- ls THEOS root ---"
           ls -la "$THEOS" || true
           echo "--- ls THEOS bin ---"
@@ -75,7 +113,11 @@ jobs:
       - name: Build with Theos
         run: |
           set -e
+          # Ensure brew and Theos bins are available in this shell
+          export PATH="$(brew --prefix)/bin:$THEOS/bin:$PATH"
           echo "Using THEOS=$THEOS"
+          echo "PATH=$PATH"
+          which dm.pl || { echo "dm.pl not found on PATH"; ls -la "$THEOS/bin"; exit 1; }
           make package
 
       - name: Upload packages
